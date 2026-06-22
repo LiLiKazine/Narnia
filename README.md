@@ -156,7 +156,7 @@ Then select a target device and run (`⌘R`).
 
 ## Roadmap
 
-- [ ] Core vault: encrypted container, nested folders, grid
+- [x] Core vault: encrypted container, nested folders, grid
 - [ ] Type-routed viewer (photo / video / QuickLook)
 - [ ] Import from Photos and Files
 - [ ] Hidden-door entry + biometric auth
