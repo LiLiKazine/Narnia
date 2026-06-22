@@ -34,6 +34,15 @@ struct VaultGridView: View {
     /// Working text for the new folder's name. Reset to the default on present.
     @State private var newFolderName = ""
 
+    /// Non-nil while the viewer is presented, carrying the item to open first.
+    @State private var viewerPresentation: ViewerPresentation?
+
+    /// Identifies which item the viewer should open at. `Identifiable` so it can
+    /// drive `.fullScreenCover(item:)` without adding `Identifiable` to VaultItem.
+    private struct ViewerPresentation: Identifiable {
+        let id: UUID
+    }
+
     private let columns = [GridItem(.adaptive(minimum: 100), spacing: 12)]
 
     init(folderID: UUID?, store: VaultStore, thumbnails: ThumbnailService) {
@@ -80,6 +89,12 @@ struct VaultGridView: View {
             .map(\.element)
     }
 
+    /// The items the viewer pages across: this folder's non-folder items, in the
+    /// same display order as the grid.
+    private var viewableItems: [VaultItem] {
+        orderedItems.filter { $0.kind != .folder }
+    }
+
     var body: some View {
         Group {
             if items.isEmpty {
@@ -112,6 +127,9 @@ struct VaultGridView: View {
         } message: {
             Text("Enter a name for the new folder.")
         }
+        .fullScreenCover(item: $viewerPresentation) { presentation in
+            ViewerShell(items: viewableItems, startID: presentation.id, store: store)
+        }
     }
 
     private var grid: some View {
@@ -125,8 +143,8 @@ struct VaultGridView: View {
         }
     }
 
-    /// One grid entry. Folders are tappable navigation links; everything else is
-    /// display-only in this slice (a viewer is a later roadmap item).
+    /// One grid entry. Folders are tappable navigation links; non-folders open
+    /// the swipe-between-items viewer at the tapped item.
     @ViewBuilder
     private func cell(for item: VaultItem) -> some View {
         let cellView = VaultItemCell(
@@ -148,8 +166,13 @@ struct VaultGridView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("item-\(item.name)")
         } else {
-            cellView
-                .accessibilityIdentifier("item-\(item.name)")
+            Button {
+                presentViewer(startingAt: item)
+            } label: {
+                cellView
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("item-\(item.name)")
         }
     }
 
@@ -164,6 +187,11 @@ struct VaultGridView: View {
         // The current folder isn't in `items` (those are its children); its own
         // metadata is in `selfItems`. Root has none → fall back to "Vault".
         selfItems.first?.name ?? "Vault"
+    }
+
+    /// Opens the viewer paging over `viewableItems`, starting at `item`.
+    private func presentViewer(startingAt item: VaultItem) {
+        viewerPresentation = ViewerPresentation(id: item.id)
     }
 
     private func createFolder() {

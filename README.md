@@ -157,10 +157,10 @@ Then select a target device and run (`⌘R`).
 ## Roadmap
 
 - [x] Core vault: encrypted container, nested folders, grid
-- [ ] Type-routed viewer (photo / video / QuickLook)
+- [x] Type-routed viewer (photo / video / QuickLook)
 - [ ] Import from Photos and Files
 - [ ] Hidden-door entry + biometric auth
-- [ ] Video privacy hardening (PiP / AirPlay / mute)
+- [x] Video privacy hardening (PiP / AirPlay / mute)
 - [ ] **Quick-exit / panic** — explicit in-app exit; opt-in flip-face-down-to-lock
 - [ ] **Realm settings screen** — originals preference, security toggles
 - [ ] **"Hide names" toggle** — mitigate on-screen-text leak from captions
