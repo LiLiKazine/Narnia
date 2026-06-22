@@ -35,6 +35,15 @@ xcodebuild -project Narnia.xcodeproj -scheme Narnia \
 - Vault data lives in the app's own encrypted container, kept entirely separate
   from cover/closet data — the two must never reference each other.
 
+## Tech decisions
+
+- **iOS app, SwiftUI, Swift 6 language mode.** UI is SwiftUI; no UIKit unless a
+  capability is unavailable in SwiftUI.
+- **Swift Concurrency over GCD.** Use `async`/`await`, `Task`, and structured
+  concurrency for parallelism — not `DispatchQueue`/GCD.
+- **Actors over locks for data safety.** Protect shared mutable state with `actor`
+  isolation (and `@MainActor` for UI state), not `NSLock`/`os_unfair_lock`/serial queues.
+
 ## Gotchas
 
 - **Git/SSH identity is repo-local.** This repo uses the `github-lilikazine` SSH
