@@ -79,6 +79,18 @@ private struct HardenedPlayerRepresentable: UIViewControllerRepresentable {
         // never need re-applying.
     }
 
+    static func dismantleUIViewController(_ controller: AVPlayerViewController,
+                                          coordinator: Coordinator) {
+        // Deterministically stop playback on teardown — e.g. quick-exit/panic or
+        // closing the viewer removes this view. Relying on ARC to release the
+        // AVPlayer can let audio continue briefly after the view is gone, which
+        // contradicts the privacy intent ("stops any playing video"). Pause and
+        // detach the item so playback (and sound) ends immediately.
+        coordinator.player.pause()
+        coordinator.player.replaceCurrentItem(with: nil)
+        controller.player = nil
+    }
+
     @MainActor
     final class Coordinator {
         let player: AVPlayer

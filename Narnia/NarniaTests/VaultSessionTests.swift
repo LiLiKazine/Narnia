@@ -51,4 +51,32 @@ struct VaultSessionTests {
         await session.attemptUnlock(using: FakeAuth(result: false), reason: "test")
         #expect(session.isUnlocked == true)
     }
+
+    @Test
+    func explicitLockReturnsToLocked() {
+        let session = VaultSession()
+        session.unlock()
+        session.lock()
+        #expect(session.isUnlocked == false)
+    }
+
+    @Test
+    func lockIsIdempotent() {
+        let session = VaultSession()
+        session.unlock()
+        session.lock()
+        session.lock()
+        #expect(session.isUnlocked == false)
+    }
+
+    @Test
+    func lockThenUnlockWorksAgain() async {
+        let session = VaultSession()
+        session.unlock()
+        session.lock()
+        // The explicit quick-exit is the one allowed inverse; re-authentication
+        // must still open the vault again afterwards.
+        await session.attemptUnlock(using: FakeAuth(result: true), reason: "test")
+        #expect(session.isUnlocked == true)
+    }
 }

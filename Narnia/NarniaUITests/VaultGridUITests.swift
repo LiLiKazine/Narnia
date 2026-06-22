@@ -69,4 +69,43 @@ final class VaultGridUITests: XCTestCase {
             "A cell for the created folder should appear in the grid"
         )
     }
+
+    @MainActor
+    func testQuickExitReturnsToCover() throws {
+        let app = XCUIApplication()
+        // Start pre-unlocked in the vault (biometrics can't be scripted).
+        app.launchArguments += ["-uitest-autounlock"]
+        app.launch()
+
+        // Confirm we're actually in the vault before exiting.
+        let newFolderButton = app.buttons["newFolderButton"]
+        XCTAssertTrue(
+            newFolderButton.waitForExistence(timeout: 10),
+            "Should start inside the vault grid"
+        )
+
+        // Tap the thumb-reachable quick-exit control.
+        let exitButton = app.buttons["vaultExitButton"]
+        XCTAssertTrue(
+            exitButton.waitForExistence(timeout: 5),
+            "Quick-exit button should exist over the vault"
+        )
+        exitButton.tap()
+
+        // Locking the session swaps the whole vault subtree out for the cover.
+        // The cover's back panel is Shape-based, so it can surface as an
+        // otherElement rather than a button — query broadly across any type.
+        let coverPanel = app.descendants(matching: .any)["coverBackPanel"]
+        XCTAssertTrue(
+            coverPanel.waitForExistence(timeout: 10),
+            "The cover should reappear after quick-exit"
+        )
+
+        // And the vault grid should be gone. Wait for disappearance rather than a
+        // bare snapshot, so a regression where the grid lingers can't pass by timing.
+        XCTAssertTrue(
+            newFolderButton.waitForNonExistence(timeout: 5),
+            "The vault grid should no longer be present after quick-exit"
+        )
+    }
 }

@@ -161,7 +161,7 @@ Then select a target device and run (`⌘R`).
 - [x] Import from Photos and Files
 - [x] Hidden-door entry + biometric auth
 - [x] Video privacy hardening (PiP / AirPlay / mute)
-- [ ] **Quick-exit / panic** — explicit in-app exit; opt-in flip-face-down-to-lock
+- [x] **Quick-exit / panic** — explicit in-app exit *(flip-face-down-to-lock deferred)*
 - [ ] **Realm settings screen** — originals preference, security toggles
 - [ ] **"Hide names" toggle** — mitigate on-screen-text leak from captions
 - [ ] Camera-direct-into-vault *(stretch)*

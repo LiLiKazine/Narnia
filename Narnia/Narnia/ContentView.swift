@@ -45,6 +45,24 @@ struct ContentView: View {
             NavigationStack {
                 VaultGridView(folderID: nil, store: store, thumbnails: thumbnails)
             }
+            // Explicit, thumb-reachable quick-exit ("panic"): locking the session
+            // swaps this whole vault subtree out for the cover, which collapses
+            // folder navigation and dismisses any presented viewer in one move.
+            // Only visible inside the unlocked vault, so it never affects the
+            // disguise. No automatic/scenePhase relock — only this tap locks.
+            .overlay(alignment: .bottomTrailing) {
+                Button {
+                    session.lock()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title)
+                        .frame(width: 44, height: 44)
+                        .background(.thinMaterial, in: Circle())
+                }
+                .padding()
+                .accessibilityIdentifier("vaultExitButton")
+                .accessibilityLabel("Exit")
+            }
         } else {
             CoverView(onHiddenDoor: {
                 Task {
