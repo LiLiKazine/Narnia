@@ -3,8 +3,9 @@
 //  NarniaUITests
 //
 //  Smoke coverage for the vault grid: creating a folder via the toolbar makes a
-//  matching cell appear. The app launches directly into the grid (no auth gate
-//  yet), so no unlock step is needed.
+//  matching cell appear. The app gates the vault behind a cover + biometric, so
+//  the test uses the DEBUG-only `-uitest-autounlock` launch arg to start in the
+//  grid (biometrics can't be scripted in the simulator).
 //
 
 import XCTest
@@ -18,6 +19,11 @@ final class VaultGridUITests: XCTestCase {
     @MainActor
     func testCreateFolderAppearsInGrid() throws {
         let app = XCUIApplication()
+        // The app launches into the cover and gates the vault behind a hidden
+        // door + biometric, which can't be scripted in the simulator. This
+        // DEBUG-only launch arg makes the app start pre-unlocked so this test
+        // reaches the grid directly.
+        app.launchArguments += ["-uitest-autounlock"]
         app.launch()
 
         // A fixed, unique-ish name so an existing cell can't give a false pass.
