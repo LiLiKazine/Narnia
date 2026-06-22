@@ -8,8 +8,10 @@
 //  through the shared ModelContext) reflects here without manual refresh.
 //
 
+import PhotosUI
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A grid of the children of a single folder. Folders navigate to a nested
 /// `VaultGridView`; non-folder items are display-only in this slice.
@@ -33,6 +35,13 @@ struct VaultGridView: View {
     @State private var isPresentingNewFolder = false
     /// Working text for the new folder's name. Reset to the default on present.
     @State private var newFolderName = ""
+
+    /// Whether the Photos picker is shown (triggered from the Import menu).
+    @State private var showPhotosPicker = false
+    /// Whether the Files importer is shown (triggered from the Import menu).
+    @State private var showFileImporter = false
+    /// Selection from the Photos picker; drained and imported on change.
+    @State private var photoSelection: [PhotosPickerItem] = []
 
     /// Non-nil while the viewer is presented, carrying the item to open first.
     @State private var viewerPresentation: ViewerPresentation?
@@ -118,6 +127,16 @@ struct VaultGridView: View {
                 .accessibilityIdentifier("newFolderButton")
                 .accessibilityLabel("New Folder")
             }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button("Import from Photos") { showPhotosPicker = true }
+                    Button("Import from Files") { showFileImporter = true }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityIdentifier("importButton")
+                .accessibilityLabel("Import")
+            }
         }
         .alert("New Folder", isPresented: $isPresentingNewFolder) {
             TextField("Folder Name", text: $newFolderName)
@@ -129,6 +148,22 @@ struct VaultGridView: View {
         }
         .fullScreenCover(item: $viewerPresentation) { presentation in
             ViewerShell(items: viewableItems, startID: presentation.id, store: store)
+        }
+        .photosPicker(
+            isPresented: $showPhotosPicker,
+            selection: $photoSelection,
+            maxSelectionCount: 0,
+            matching: .any(of: [.images, .videos])
+        )
+        .onChange(of: photoSelection) { _, newSelection in
+            importPhotos(newSelection)
+        }
+        .fileImporter(
+            isPresented: $showFileImporter,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true
+        ) { result in
+            importFiles(result)
         }
     }
 
@@ -198,5 +233,40 @@ struct VaultGridView: View {
         let trimmed = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         try? store.createFolder(name: trimmed, in: folderID)
+    }
+
+    /// Copies each picked photo/video into the current folder via ImportService.
+    /// `loadTransferable` is async, so the work runs in a Task; the service is
+    /// `@MainActor` (as is this view), so its calls stay on the main actor. The
+    /// selection is drained afterward so re-picking the same asset re-fires.
+    private func importPhotos(_ selection: [PhotosPickerItem]) {
+        guard !selection.isEmpty else { return }
+        Task {
+            let importer = ImportService(store: store)
+            for item in selection {
+                let data = try? await item.loadTransferable(type: Data.self)
+                guard let data else { continue }
+                let contentType = item.supportedContentTypes.first
+                let suggestedName = "Photo-\(UUID().uuidString.prefix(8))"
+                try? importer.importData(
+                    data,
+                    suggestedName: suggestedName,
+                    contentType: contentType,
+                    into: folderID
+                )
+            }
+            photoSelection = []
+        }
+    }
+
+    /// Copies each picked file into the current folder via ImportService.
+    /// The service handles security-scoped access. Failures (including the
+    /// importer's own `.failure`) are swallowed — no error UI leaks.
+    private func importFiles(_ result: Result<[URL], Error>) {
+        guard case let .success(urls) = result else { return }
+        let importer = ImportService(store: store)
+        for url in urls {
+            try? importer.importFile(at: url, into: folderID, securityScoped: true)
+        }
     }
 }
