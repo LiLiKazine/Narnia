@@ -24,6 +24,12 @@ struct VaultItemCell: View {
 
     @State private var image: UIImage?
 
+    /// Privacy setting (design spec §5): when on, identifying folder/document
+    /// names are replaced by generic type words so no item names show on screen.
+    /// `@AppStorage`-backed so the Settings toggle and this cell share one
+    /// observed source of truth without threading an object through the grid.
+    @AppStorage("vault.hideNames") private var hideNames = false
+
     init(item: VaultItem, fileURL: URL?, thumbnails: ThumbnailService, maxPixel: CGFloat = 300) {
         self.item = item
         self.fileURL = fileURL
@@ -74,12 +80,13 @@ struct VaultItemCell: View {
     }
 
     /// Caption row. Only `.folder` and `.document` show text; other kinds get an
-    /// empty placeholder of the same height so every cell is the same size.
+    /// empty placeholder of the same height so every cell is the same size. The
+    /// text itself is decided by `displayCaption`, which also honors hide-names.
     @ViewBuilder
     private var caption: some View {
         Group {
-            if showsCaption {
-                Text(item.name)
+            if let text = Self.displayCaption(name: item.name, kind: item.kind, hideNames: hideNames) {
+                Text(text)
                     .font(.caption)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -95,8 +102,24 @@ struct VaultItemCell: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var showsCaption: Bool {
-        item.kind == .folder || item.kind == .document
+    /// The caption to show for an item, honoring the hide-names privacy setting.
+    /// Folders/documents show their name normally; with hideNames on, the name is
+    /// replaced by a generic type word so no identifying text is on screen. Photos
+    /// and videos never show a caption (nil).
+    ///
+    /// Tradeoff (design spec §1): documents are normally identified *solely* by
+    /// their name, so turning hide-names on deliberately makes them
+    /// indistinguishable from one another — that opacity is the opt-in cost of
+    /// removing the on-screen text leak, not a defect.
+    ///
+    /// Pure and `nonisolated` so tests can call it without building a View or
+    /// hopping to the main actor.
+    nonisolated static func displayCaption(name: String, kind: ItemKind, hideNames: Bool) -> String? {
+        switch kind {
+        case .folder:   return hideNames ? "Folder" : name
+        case .document: return hideNames ? "Document" : name
+        case .photo, .video, .other: return nil
+        }
     }
 
     private var symbolName: String {

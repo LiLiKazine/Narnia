@@ -63,6 +63,12 @@ struct VaultGridView: View {
     /// Whether the settings sheet (the "Realm") is shown.
     @State private var isPresentingSettings = false
 
+    /// Privacy setting (design spec §5): when on, a folder's nav title is
+    /// genericized to "Folder" to match the captions the cell hides. Shared via
+    /// `@AppStorage` with the Settings toggle and the cell, so flipping it in
+    /// Settings updates the title and grid together without threading an object.
+    @AppStorage("vault.hideNames") private var hideNames = false
+
     /// Non-nil while the viewer is presented, carrying the item to open first.
     @State private var viewerPresentation: ViewerPresentation?
 
@@ -255,7 +261,7 @@ struct VaultGridView: View {
             thumbnails: thumbnails
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(item.name)
+        .accessibilityLabel(accessibilityLabel(for: item))
 
         // The accessibility identifier rides on the OUTER element so the UI test
         // can query it: a folder's NavigationLink surfaces as a button that
@@ -278,6 +284,22 @@ struct VaultGridView: View {
         }
     }
 
+    /// The spoken (VoiceOver/automation) label for a cell. When hide-names is on,
+    /// it must NOT leak the real name — otherwise the visible caption is genericized
+    /// but the accessibility label would still expose "Passport.pdf" (spec §5 leak).
+    /// The `item-<name>` accessibilityIdentifier is separate (not spoken; UI tests
+    /// need it) and intentionally keeps the name.
+    private func accessibilityLabel(for item: VaultItem) -> String {
+        guard hideNames else { return item.name }
+        switch item.kind {
+        case .folder: return "Folder"
+        case .photo: return "Photo"
+        case .video: return "Video"
+        case .document: return "Document"
+        case .other: return "Item"
+        }
+    }
+
     private var emptyState: some View {
         Text("Empty")
             .font(.callout)
@@ -287,8 +309,12 @@ struct VaultGridView: View {
 
     private var navigationTitle: String {
         // The current folder isn't in `items` (those are its children); its own
-        // metadata is in `selfItems`. Root has none → fall back to "Vault".
-        selfItems.first?.name ?? "Vault"
+        // metadata is in `selfItems`. Root (folderID == nil) has none → "Vault".
+        guard folderID != nil else { return "Vault" }
+        // Inside a folder: with hide-names on, the real name would leak through
+        // the title, so show a neutral "Folder" to match the hidden captions.
+        if hideNames { return "Folder" }
+        return selfItems.first?.name ?? "Vault"
     }
 
     /// Opens the viewer paging over `viewableItems`, starting at `item`.

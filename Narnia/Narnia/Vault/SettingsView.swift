@@ -21,6 +21,12 @@ struct SettingsView: View {
     /// by `OriginalsPreference` itself.
     @Bindable var preference: OriginalsPreference
 
+    /// Privacy setting (design spec §5): genericizes on-screen folder/document
+    /// captions to plug the text leak from item names. `@AppStorage`-backed so
+    /// this toggle and the readers (the cell + the folder nav title) share one
+    /// observed source of truth without threading an object.
+    @AppStorage("vault.hideNames") private var hideNames = false
+
     @Environment(\.dismiss) private var dismiss
 
     init(preference: OriginalsPreference) {
@@ -48,15 +54,22 @@ struct SettingsView: View {
                     )
                 }
 
-                // MARK: Security (placeholder — FUTURE)
+                // MARK: Security (spec §5)
                 //
-                // Future home for vault security toggles per spec §5: "Hide
-                // names" and opt-in "flip-to-lock". These are separate roadmap
-                // items and are intentionally NOT implemented here yet — leave
-                // this section structure as the landing spot when they arrive.
-                // (No rows on purpose; an empty Section renders nothing.)
-                Section("Security") {
-                    // Intentionally empty for now.
+                // "Hide names" lives here. Opt-in "flip-to-lock" is a separate
+                // roadmap item and still belongs in this section when it lands.
+                Section {
+                    Toggle("Hide names", isOn: $hideNames)
+                        .accessibilityIdentifier("hideNamesToggle")
+                } header: {
+                    Text("Security")
+                } footer: {
+                    Text(
+                        "Hides folder and document names in the grid to avoid "
+                            + "showing identifying text. Documents are normally "
+                            + "identified only by their name, so they'll appear "
+                            + "as generic items while this is on."
+                    )
                 }
             }
             .navigationTitle("Settings")

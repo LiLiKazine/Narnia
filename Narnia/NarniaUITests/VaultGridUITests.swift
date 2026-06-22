@@ -156,4 +156,49 @@ final class VaultGridUITests: XCTestCase {
             "The vault grid should be visible again after dismissing settings"
         )
     }
+
+    @MainActor
+    func testHideNamesToggleIsAvailableInSettings() throws {
+        let app = XCUIApplication()
+        // Start pre-unlocked in the vault (biometrics can't be scripted).
+        app.launchArguments += ["-uitest-autounlock"]
+        app.launch()
+
+        // Confirm we're inside the vault grid before opening settings.
+        let newFolderButton = app.buttons["newFolderButton"]
+        XCTAssertTrue(
+            newFolderButton.waitForExistence(timeout: 10),
+            "Should start inside the vault grid"
+        )
+
+        // Open the Realm settings screen.
+        let settingsButton = app.buttons["settingsButton"]
+        XCTAssertTrue(
+            settingsButton.waitForExistence(timeout: 5),
+            "Settings gear button should exist on the grid"
+        )
+        settingsButton.tap()
+
+        // The Hide names toggle should be present and operable. Query broadly:
+        // a SwiftUI Toggle can surface as a switch or other element type.
+        let hideNamesToggle = app.descendants(matching: .any)["hideNamesToggle"]
+        XCTAssertTrue(
+            hideNamesToggle.waitForExistence(timeout: 5),
+            "The Hide names toggle should appear in the settings screen"
+        )
+        hideNamesToggle.tap()
+
+        // Dismiss via Done and confirm we're back on the grid (no crash).
+        let doneButton = app.buttons["settingsDoneButton"]
+        XCTAssertTrue(
+            doneButton.waitForExistence(timeout: 5),
+            "Settings Done button should exist"
+        )
+        doneButton.tap()
+
+        XCTAssertTrue(
+            newFolderButton.waitForExistence(timeout: 5),
+            "The vault grid should be visible again after toggling Hide names"
+        )
+    }
 }
