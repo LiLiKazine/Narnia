@@ -22,6 +22,11 @@ struct VaultGridView: View {
     let store: VaultStore
     /// Thumbnail generator/cache. An `actor` — always `await`-ed (in the cell).
     let thumbnails: ThumbnailService
+    /// The single shared "remove originals" preference, injected from the vault
+    /// root (ContentView) and threaded into every nested level and the settings
+    /// screen. Both the one-time import prompt and the settings Picker read and
+    /// write THIS instance, so the choice is one persisted source of truth.
+    let originalsPreference: OriginalsPreference
 
     /// Live children of `folderID`, name-sorted by the query. Folders-first
     /// regrouping happens in `body` (a `SortDescriptor` can't express it).
@@ -43,9 +48,6 @@ struct VaultGridView: View {
     /// Selection from the Photos picker; drained and imported on change.
     @State private var photoSelection: [PhotosPickerItem] = []
 
-    /// The user's saved "remove originals when possible" choice. Asked once, on
-    /// the first import from any source, then honored silently thereafter.
-    @State private var originalsPreference = OriginalsPreference()
     /// Whether the one-time "remove originals?" prompt is shown.
     @State private var isPresentingOriginalsPrompt = false
     /// The import waiting on the user's answer to the one-time prompt. Stashed
@@ -58,6 +60,9 @@ struct VaultGridView: View {
         case files([URL])
     }
 
+    /// Whether the settings sheet (the "Realm") is shown.
+    @State private var isPresentingSettings = false
+
     /// Non-nil while the viewer is presented, carrying the item to open first.
     @State private var viewerPresentation: ViewerPresentation?
 
@@ -69,10 +74,14 @@ struct VaultGridView: View {
 
     private let columns = [GridItem(.adaptive(minimum: 100), spacing: 12)]
 
-    init(folderID: UUID?, store: VaultStore, thumbnails: ThumbnailService) {
+    init(folderID: UUID?,
+         store: VaultStore,
+         thumbnails: ThumbnailService,
+         originalsPreference: OriginalsPreference) {
         self.folderID = folderID
         self.store = store
         self.thumbnails = thumbnails
+        self.originalsPreference = originalsPreference
 
         // Branch the predicate: a captured optional `UUID?` compared with `==`
         // does NOT compile to SQL `IS NULL`, so the root case must be its own
@@ -129,9 +138,21 @@ struct VaultGridView: View {
         }
         .navigationTitle(navigationTitle)
         .navigationDestination(for: UUID.self) { childID in
-            VaultGridView(folderID: childID, store: store, thumbnails: thumbnails)
+            VaultGridView(folderID: childID,
+                          store: store,
+                          thumbnails: thumbnails,
+                          originalsPreference: originalsPreference)
         }
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    isPresentingSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .accessibilityIdentifier("settingsButton")
+                .accessibilityLabel("Settings")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     newFolderName = "New Folder"
@@ -163,6 +184,9 @@ struct VaultGridView: View {
         }
         .fullScreenCover(item: $viewerPresentation) { presentation in
             ViewerShell(items: viewableItems, startID: presentation.id, store: store)
+        }
+        .sheet(isPresented: $isPresentingSettings) {
+            SettingsView(preference: originalsPreference)
         }
         .photosPicker(
             isPresented: $showPhotosPicker,

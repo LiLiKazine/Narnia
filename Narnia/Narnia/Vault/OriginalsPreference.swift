@@ -13,8 +13,12 @@
 
 import Foundation
 
+import Observation
+
 /// User's standing choice for removing an imported file's ORIGINAL (best-effort).
-enum OriginalsDisposition: String, Sendable {
+///
+/// `CaseIterable` so a settings `Picker` can iterate the available choices.
+enum OriginalsDisposition: String, Sendable, CaseIterable {
     case ask     // not yet decided — prompt on first import
     case remove  // attempt to remove originals when possible
     case keep    // never remove originals
@@ -24,33 +28,41 @@ enum OriginalsDisposition: String, Sendable {
 ///
 /// Defaults to `.ask` when no choice has been recorded (or a stored value is
 /// unrecognized). Writes are flushed to the backing store immediately on set.
-@MainActor
+///
+/// `@Observable` so SwiftUI views (e.g. the settings screen) track changes to
+/// ``disposition`` and the flags derived from it. Because `@Observable` only
+/// instruments *stored* properties, ``disposition`` is backed by a stored
+/// property — seeded from `UserDefaults` in `init` and mirrored back to the
+/// store in its `didSet` — rather than computed directly over `UserDefaults`.
+@MainActor @Observable
 final class OriginalsPreference {
 
     /// Stable `UserDefaults` key for the persisted disposition.
+    @ObservationIgnored
     private static let key = "vault.originalsDisposition"
 
+    @ObservationIgnored
     private let defaults: UserDefaults
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-    }
 
     /// Current disposition; persisted to `UserDefaults` on set.
     ///
-    /// Reading an absent or unrecognized stored value yields `.ask`.
+    /// Seeded from the store at `init`; an absent or unrecognized stored value
+    /// yields `.ask`. Each change is written straight back to `UserDefaults`.
     var disposition: OriginalsDisposition {
-        get {
-            guard
-                let raw = defaults.string(forKey: Self.key),
-                let value = OriginalsDisposition(rawValue: raw)
-            else {
-                return .ask
-            }
-            return value
+        didSet {
+            defaults.set(disposition.rawValue, forKey: Self.key)
         }
-        set {
-            defaults.set(newValue.rawValue, forKey: Self.key)
+    }
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if
+            let raw = defaults.string(forKey: Self.key),
+            let value = OriginalsDisposition(rawValue: raw)
+        {
+            self.disposition = value
+        } else {
+            self.disposition = .ask
         }
     }
 

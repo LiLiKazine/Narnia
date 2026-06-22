@@ -20,6 +20,12 @@ struct ContentView: View {
     // and do not re-lock on background/return (spec §3 rejects that).
     @State private var session = VaultSession(initiallyUnlocked: ContentView.uiTestAutoUnlock)
 
+    // The single shared "remove originals" preference. Owned here (the vault
+    // root) so one instance flows into every VaultGridView level AND the
+    // settings screen — settings and import read/write the same persisted
+    // source of truth. Lives for the process lifetime, like the session.
+    @State private var originalsPreference = OriginalsPreference()
+
     // DEBUG-only test seam: a process launched WITH `-uitest-autounlock` starts
     // in the vault so XCUITests (which can't script biometrics) can reach the
     // grid. Compiled out of Release entirely, so the shipped gate is intact;
@@ -43,7 +49,10 @@ struct ContentView: View {
     var body: some View {
         if session.isUnlocked {
             NavigationStack {
-                VaultGridView(folderID: nil, store: store, thumbnails: thumbnails)
+                VaultGridView(folderID: nil,
+                              store: store,
+                              thumbnails: thumbnails,
+                              originalsPreference: originalsPreference)
             }
             // Explicit, thumb-reachable quick-exit ("panic"): locking the session
             // swaps this whole vault subtree out for the cover, which collapses
@@ -86,4 +95,6 @@ struct ContentView: View {
     return ContentView(store: store,
                        thumbnails: ThumbnailService(thumbsDirectory: storage.thumbsDir))
         .modelContainer(container)
+    // ContentView constructs its own shared OriginalsPreference internally; no
+    // injection needed in the preview.
 }

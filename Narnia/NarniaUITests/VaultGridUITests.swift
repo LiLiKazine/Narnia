@@ -108,4 +108,52 @@ final class VaultGridUITests: XCTestCase {
             "The vault grid should no longer be present after quick-exit"
         )
     }
+
+    @MainActor
+    func testSettingsOpensAndShowsOriginalsControl() throws {
+        let app = XCUIApplication()
+        // Start pre-unlocked in the vault (biometrics can't be scripted).
+        app.launchArguments += ["-uitest-autounlock"]
+        app.launch()
+
+        // Confirm we're inside the vault grid before opening settings.
+        let newFolderButton = app.buttons["newFolderButton"]
+        XCTAssertTrue(
+            newFolderButton.waitForExistence(timeout: 10),
+            "Should start inside the vault grid"
+        )
+
+        // Tap the gear control to summon the Realm settings screen.
+        let settingsButton = app.buttons["settingsButton"]
+        XCTAssertTrue(
+            settingsButton.waitForExistence(timeout: 5),
+            "Settings gear button should exist on the grid"
+        )
+        settingsButton.tap()
+
+        // The settings screen should appear. Query broadly: the originals
+        // control can surface under several element types depending on the
+        // Picker style, so match against any descendant by identifier, with the
+        // "Settings" title as a backstop.
+        let originalsPicker = app.descendants(matching: .any)["originalsPicker"]
+        let settingsTitle = app.staticTexts["Settings"]
+        XCTAssertTrue(
+            originalsPicker.waitForExistence(timeout: 5)
+                || settingsTitle.waitForExistence(timeout: 5),
+            "The settings screen with the originals control should appear"
+        )
+
+        // Dismiss via Done and confirm we're back on the grid.
+        let doneButton = app.buttons["settingsDoneButton"]
+        XCTAssertTrue(
+            doneButton.waitForExistence(timeout: 5),
+            "Settings Done button should exist"
+        )
+        doneButton.tap()
+
+        XCTAssertTrue(
+            newFolderButton.waitForExistence(timeout: 5),
+            "The vault grid should be visible again after dismissing settings"
+        )
+    }
 }

@@ -162,7 +162,7 @@ Then select a target device and run (`⌘R`).
 - [x] Hidden-door entry + biometric auth
 - [x] Video privacy hardening (PiP / AirPlay / mute)
 - [x] **Quick-exit / panic** — explicit in-app exit *(flip-face-down-to-lock deferred)*
-- [ ] **Realm settings screen** — originals preference, security toggles
+- [x] **Realm settings screen** — originals preference *(security toggles to follow)*
 - [ ] **"Hide names" toggle** — mitigate on-screen-text leak from captions
 - [ ] Camera-direct-into-vault *(stretch)*
 - [ ] Share extension for importing from other apps *(stretch)*

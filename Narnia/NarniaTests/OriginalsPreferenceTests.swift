@@ -60,6 +60,21 @@ struct OriginalsPreferenceTests {
     }
 
     @Test
+    func unrecognizedStoredValueDefaultsToAsk() {
+        let (defaults, teardown) = makeSuite()
+        defer { teardown() }
+
+        // Simulate a corrupt / future-version value under the live key.
+        defaults.set("garbage", forKey: "vault.originalsDisposition")
+
+        let preference = OriginalsPreference(defaults: defaults)
+
+        #expect(preference.disposition == .ask)
+        #expect(preference.hasBeenAsked == false)
+        #expect(preference.shouldRemove == false)
+    }
+
+    @Test
     func settingKeepPersistsAcrossInstances() {
         let (defaults, teardown) = makeSuite()
         defer { teardown() }
