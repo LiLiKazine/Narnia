@@ -6,17 +6,26 @@ import UniformTypeIdentifiers
 /// A thin policy layer over `VaultStore`: it classifies incoming content into an
 /// `ItemKind`, manages security-scoped access and temp files for the two import
 /// sources (the document picker and `PhotosPicker`), and delegates the actual
-/// copy-then-record to `VaultStore.storeFile`. Per spec §2 this slice copies
-/// originals into the vault container only — it never deletes the originals.
+/// copy-then-record to `VaultStore.storeFile`.
+///
+/// Per spec §2, removing an imported file's original is best-effort and governed
+/// by `removeOriginal`. The hard ordering rule holds: the vault copy is written
+/// and confirmed *first*, and only then — never the reverse — is the original
+/// removed via the injected `OriginalRemoving`. A removal failure never fails the
+/// import.
 ///
 /// `@MainActor` because every call funnels into the main-actor-bound
 /// `VaultStore`.
 @MainActor
 struct ImportService {
     let store: VaultStore
+    let remover: any OriginalRemoving
 
-    init(store: VaultStore) {
+    /// The default `remover` keeps existing `ImportService(store:)` call sites
+    /// compiling unchanged.
+    init(store: VaultStore, remover: any OriginalRemoving = OriginalRemover()) {
         self.store = store
+        self.remover = remover
     }
 
     // MARK: - Classification
@@ -58,26 +67,47 @@ struct ImportService {
     /// document picker — access is bracketed with
     /// `start`/`stopAccessingSecurityScopedResource`. The copy itself is handled
     /// by `VaultStore.storeFile`, which copies bytes before recording metadata.
+    ///
+    /// When `removeOriginal` is true, the source is removed *after* the vault copy
+    /// is confirmed — and, for security-scoped URLs, still inside the access
+    /// window (deletion needs the scope). Removal is best-effort: a failure (e.g.
+    /// a read-only original) never fails the import. If the copy throws, the
+    /// original is never touched.
     @discardableResult
-    func importFile(at source: URL, into parentID: UUID?, securityScoped: Bool) throws -> VaultItem {
+    func importFile(
+        at source: URL,
+        into parentID: UUID?,
+        securityScoped: Bool,
+        removeOriginal: Bool = false
+    ) throws -> VaultItem {
         if securityScoped {
             guard source.startAccessingSecurityScopedResource() else {
                 throw ImportError.accessDenied
             }
             defer { source.stopAccessingSecurityScopedResource() }
-            return try store.storeFile(
+            let item = try store.storeFile(
                 from: source,
                 kind: Self.kind(for: source),
                 name: source.lastPathComponent,
                 in: parentID
             )
+            // Copy confirmed — only now remove the original, still in scope.
+            if removeOriginal {
+                remover.removeFileOriginal(at: source, securityScoped: securityScoped)
+            }
+            return item
         }
-        return try store.storeFile(
+        let item = try store.storeFile(
             from: source,
             kind: Self.kind(for: source),
             name: source.lastPathComponent,
             in: parentID
         )
+        // Copy confirmed — only now remove the original.
+        if removeOriginal {
+            remover.removeFileOriginal(at: source, securityScoped: securityScoped)
+        }
+        return item
     }
 
     /// Imports in-memory bytes (e.g. from `PhotosPicker`) into `parentID`.
@@ -87,13 +117,20 @@ struct ImportService {
     /// always removes the temp file afterward. The recorded `name` is
     /// `suggestedName`, with the derived extension appended only when the
     /// suggested name lacks one of its own.
+    ///
+    /// When `removeOriginal` is true and `assetLocalIdentifier` is non-nil, the
+    /// backing Photos asset is deleted *after* the vault copy is confirmed (iOS
+    /// shows its own confirmation). Removal is best-effort and never fails the
+    /// import. If the copy throws, the asset is never touched.
     @discardableResult
     func importData(
         _ data: Data,
         suggestedName: String,
         contentType: UTType?,
-        into parentID: UUID?
-    ) throws -> VaultItem {
+        assetLocalIdentifier: String? = nil,
+        into parentID: UUID?,
+        removeOriginal: Bool = false
+    ) async throws -> VaultItem {
         let ext = contentType?.preferredFilenameExtension
         let tempName = ext.map { "\(UUID().uuidString).\($0)" } ?? UUID().uuidString
         let tempURL = FileManager.default.temporaryDirectory.appending(path: tempName)
@@ -102,7 +139,13 @@ struct ImportService {
 
         let name = resolvedName(suggestedName, ext: ext)
         let kind = contentType.map(Self.kind(for:)) ?? .other
-        return try store.storeFile(from: tempURL, kind: kind, name: name, in: parentID)
+        let item = try store.storeFile(from: tempURL, kind: kind, name: name, in: parentID)
+
+        // Copy confirmed — only now remove the backing Photos asset, if any.
+        if removeOriginal, let assetLocalIdentifier {
+            await remover.removePhotoOriginal(localIdentifier: assetLocalIdentifier)
+        }
+        return item
     }
 
     // MARK: - Private

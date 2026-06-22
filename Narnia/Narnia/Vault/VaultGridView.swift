@@ -43,6 +43,21 @@ struct VaultGridView: View {
     /// Selection from the Photos picker; drained and imported on change.
     @State private var photoSelection: [PhotosPickerItem] = []
 
+    /// The user's saved "remove originals when possible" choice. Asked once, on
+    /// the first import from any source, then honored silently thereafter.
+    @State private var originalsPreference = OriginalsPreference()
+    /// Whether the one-time "remove originals?" prompt is shown.
+    @State private var isPresentingOriginalsPrompt = false
+    /// The import waiting on the user's answer to the one-time prompt. Stashed
+    /// when the prompt is raised, then run with the chosen disposition.
+    @State private var pendingImport: PendingImport?
+
+    /// An import deferred until the one-time originals prompt is answered.
+    private enum PendingImport {
+        case photos([PhotosPickerItem])
+        case files([URL])
+    }
+
     /// Non-nil while the viewer is presented, carrying the item to open first.
     @State private var viewerPresentation: ViewerPresentation?
 
@@ -153,17 +168,45 @@ struct VaultGridView: View {
             isPresented: $showPhotosPicker,
             selection: $photoSelection,
             maxSelectionCount: 0,
-            matching: .any(of: [.images, .videos])
+            matching: .any(of: [.images, .videos]),
+            photoLibrary: .shared()
         )
         .onChange(of: photoSelection) { _, newSelection in
-            importPhotos(newSelection)
+            beginImport(.photos(newSelection))
         }
         .fileImporter(
             isPresented: $showFileImporter,
             allowedContentTypes: [.item],
             allowsMultipleSelection: true
         ) { result in
-            importFiles(result)
+            guard case let .success(urls) = result else { return }
+            beginImport(.files(urls))
+        }
+        .confirmationDialog(
+            "Remove originals when possible?",
+            isPresented: $isPresentingOriginalsPrompt,
+            titleVisibility: .visible
+        ) {
+            Button("Remove Originals") {
+                originalsPreference.disposition = .remove
+                runPendingImport()
+            }
+            .accessibilityIdentifier("removeOriginalsButton")
+            Button("Keep Originals") {
+                originalsPreference.disposition = .keep
+                runPendingImport()
+            }
+            .accessibilityIdentifier("keepOriginalsButton")
+            Button("Cancel", role: .cancel) {
+                // Dismissed without choosing: drop the stashed import and leave the
+                // preference at .ask so the next import asks again.
+                pendingImport = nil
+            }
+        } message: {
+            Text(
+                "When you import a file, Narnia can remove the original from its "
+                    + "source when possible. You'll still confirm any Photos deletion."
+            )
         }
     }
 
@@ -235,12 +278,52 @@ struct VaultGridView: View {
         try? store.createFolder(name: trimmed, in: folderID)
     }
 
+    /// Entry point for any import. On the very first import (from either source)
+    /// the user hasn't chosen a disposition yet, so we stash the work and raise
+    /// the one-time prompt; the prompt's actions resume via `runPendingImport`.
+    /// Once answered, later imports run immediately with the saved choice.
+    private func beginImport(_ pending: PendingImport) {
+        guard hasContent(pending) else { return }
+        if originalsPreference.hasBeenAsked {
+            perform(pending)
+        } else {
+            pendingImport = pending
+            isPresentingOriginalsPrompt = true
+        }
+    }
+
+    /// Runs the import stashed when the one-time prompt was raised, using the
+    /// disposition the user just chose. Clears the stash afterward.
+    private func runPendingImport() {
+        guard let pending = pendingImport else { return }
+        pendingImport = nil
+        perform(pending)
+    }
+
+    private func hasContent(_ pending: PendingImport) -> Bool {
+        switch pending {
+        case let .photos(items): return !items.isEmpty
+        case let .files(urls): return !urls.isEmpty
+        }
+    }
+
+    private func perform(_ pending: PendingImport) {
+        switch pending {
+        case let .photos(items): importPhotos(items)
+        case let .files(urls): importFiles(urls)
+        }
+    }
+
     /// Copies each picked photo/video into the current folder via ImportService.
-    /// `loadTransferable` is async, so the work runs in a Task; the service is
-    /// `@MainActor` (as is this view), so its calls stay on the main actor. The
-    /// selection is drained afterward so re-picking the same asset re-fires.
+    /// `loadTransferable` and `importData` are async, so the work runs in a Task;
+    /// the service is `@MainActor` (as is this view), so its calls stay on the
+    /// main actor. Each item's `itemIdentifier` is the asset's localIdentifier
+    /// (the picker uses `.shared()`), passed through so the importer can remove
+    /// the original when the user opted in. The selection is drained afterward
+    /// so re-picking the same asset re-fires.
     private func importPhotos(_ selection: [PhotosPickerItem]) {
         guard !selection.isEmpty else { return }
+        let removeOriginal = originalsPreference.shouldRemove
         Task {
             let importer = ImportService(store: store)
             for item in selection {
@@ -248,11 +331,13 @@ struct VaultGridView: View {
                 guard let data else { continue }
                 let contentType = item.supportedContentTypes.first
                 let suggestedName = "Photo-\(UUID().uuidString.prefix(8))"
-                try? importer.importData(
+                try? await importer.importData(
                     data,
                     suggestedName: suggestedName,
                     contentType: contentType,
-                    into: folderID
+                    assetLocalIdentifier: item.itemIdentifier,
+                    into: folderID,
+                    removeOriginal: removeOriginal
                 )
             }
             photoSelection = []
@@ -262,11 +347,16 @@ struct VaultGridView: View {
     /// Copies each picked file into the current folder via ImportService.
     /// The service handles security-scoped access. Failures (including the
     /// importer's own `.failure`) are swallowed — no error UI leaks.
-    private func importFiles(_ result: Result<[URL], Error>) {
-        guard case let .success(urls) = result else { return }
+    private func importFiles(_ urls: [URL]) {
+        let removeOriginal = originalsPreference.shouldRemove
         let importer = ImportService(store: store)
         for url in urls {
-            try? importer.importFile(at: url, into: folderID, securityScoped: true)
+            try? importer.importFile(
+                at: url,
+                into: folderID,
+                securityScoped: true,
+                removeOriginal: removeOriginal
+            )
         }
     }
 }
