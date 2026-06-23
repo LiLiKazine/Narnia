@@ -12,23 +12,34 @@ protocol OriginalRemoving: Sendable {
     /// Attempts to delete a file-system original (e.g. a document-picker URL).
     /// Read-only originals can't be deleted and will fail silently. The caller
     /// must still hold the security scope when this is called.
-    func removeFileOriginal(at url: URL, securityScoped: Bool)
+    ///
+    /// `nonisolated`: this is I/O, not UI. It must not inherit the project's
+    /// default `@MainActor` isolation — see `removePhotoOriginal`.
+    nonisolated func removeFileOriginal(at url: URL, securityScoped: Bool)
 
     /// Attempts to delete a Photos asset by its local identifier. iOS always
     /// shows its own deletion confirmation; denial or any error is swallowed.
-    func removePhotoOriginal(localIdentifier: String) async
+    ///
+    /// `nonisolated` is load-bearing. The project defaults declarations to
+    /// `@MainActor` (`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`). Without this,
+    /// the `PHPhotoLibrary.performChanges` block would inherit `@MainActor`
+    /// isolation, but Photos runs that block on its own private serial queue —
+    /// so the runtime's actor-isolation precondition traps. Keeping the method
+    /// `nonisolated` makes the change block default to nonisolated, which is
+    /// correct: it does no UI work.
+    nonisolated func removePhotoOriginal(localIdentifier: String) async
 }
 
 /// Concrete `OriginalRemoving` backed by `FileManager` and the Photos framework.
 /// Stateless, hence trivially `Sendable`.
 struct OriginalRemover: OriginalRemoving {
-    func removeFileOriginal(at url: URL, securityScoped: Bool) {
+    nonisolated func removeFileOriginal(at url: URL, securityScoped: Bool) {
         // Best-effort: the caller already holds the security scope. Read-only
         // originals (no write scope) will fail here — swallow it.
         try? FileManager.default.removeItem(at: url)
     }
 
-    func removePhotoOriginal(localIdentifier: String) async {
+    nonisolated func removePhotoOriginal(localIdentifier: String) async {
         // Photos deletion needs read-write authorization. Request it if needed;
         // if the user declines, there's nothing to do.
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
